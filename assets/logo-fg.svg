@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <g stroke-linecap="round" fill="none">
+    <!-- Clock face -->
+    <circle cx="512" cy="512" r="240" stroke="#D8C9A8" stroke-width="24"/>
+    <!-- Ticks at 12 / 3 / 6 / 9 -->
+    <line x1="512" y1="252" x2="512" y2="288" stroke="#D8C9A8" stroke-width="18"/>
+    <line x1="736" y1="512" x2="772" y2="512" stroke="#D8C9A8" stroke-width="18"/>
+    <line x1="512" y1="736" x2="512" y2="772" stroke="#D8C9A8" stroke-width="18"/>
+    <line x1="252" y1="512" x2="288" y2="512" stroke="#D8C9A8" stroke-width="18"/>
+    <!-- Range arc -->
+    <path d="M 512 312 A 210 210 0 0 1 706 567" stroke="#D8C9A8" stroke-width="48" />
+    <circle cx="512" cy="302" r="12" fill="#D8C9A8" stroke="none"/>
+    <circle cx="706" cy="567" r="12" fill="#D8C9A8" stroke="none"/>
+  </g>
+  <circle cx="512" cy="512" r="16" fill="#D8C9A8"/>
+</svg>

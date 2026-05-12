@@ -1,0 +1,19 @@
+{
+  "name": "native-alarm",
+  "version": "0.1.0",
+  "description": "Native Android AlarmManager integration for the range-alarm app.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "private": true,
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": ["expo", "alarm", "android"],
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "expo": "*",
+    "expo-modules-core": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}
