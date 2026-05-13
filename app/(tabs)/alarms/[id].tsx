@@ -1,9 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, Image as ImageIcon, Music2, Trash2 } from 'lucide-react-native';
-import Animated, { LinearTransition } from 'react-native-reanimated';
 import { useAlarmStore } from '@/stores/useAlarmStore';
 import { RingtonePicker } from '@/components/RingtonePicker';
 import { WeekdaySelector } from '@/components/WeekdaySelector';
@@ -62,8 +61,8 @@ export default function EditGroupScreen() {
     );
   }
 
-  const onSave = async () => {
-    await saveGroup({
+  const onSave = () => {
+    const updated = {
       ...group,
       label,
       repeatDays,
@@ -77,13 +76,22 @@ export default function EditGroupScreen() {
       end: single ? { hour: startH, minute: startM } : { hour: endH, minute: endM },
       stepMinutes: single ? 0 : step,
       updatedAt: Date.now(),
-    });
+    };
+    // Happy path: close immediately. Save runs in the background; surface any
+    // error via an Alert if it ever fails.
     router.back();
+    saveGroup(updated).catch((err: any) => {
+      console.error('[edit] save failed', err?.message ?? err);
+      Alert.alert('Could not save alarm', String(err?.message ?? err));
+    });
   };
 
-  const onDelete = async () => {
-    await removeGroups([group.id]);
+  const onDelete = () => {
     router.back();
+    removeGroups([group.id]).catch((err: any) => {
+      console.error('[edit] delete failed', err?.message ?? err);
+      Alert.alert('Could not delete alarm', String(err?.message ?? err));
+    });
   };
 
   const onAddRingtone = async () => {
@@ -278,20 +286,19 @@ export default function EditGroupScreen() {
 
         {!single && (
           <View style={[styles.card, { paddingHorizontal: 0 }]}>
-            <Text style={[styles.fieldLabel, { paddingHorizontal: 16 }]}>Instances · tap to skip</Text>
+            <Text style={[styles.fieldLabel, { paddingHorizontal: 16 }]}>Instances</Text>
             {instances.map(inst => (
-              <Animated.View key={inst.id} layout={LinearTransition.springify().damping(18)}>
-                <Pressable
-                  onPress={() => setInstanceSkipped(group.id, inst.id, !inst.skipped)}
-                  style={[styles.instRow, inst.skipped && styles.instRowSkipped]}
-                  android_ripple={{ color: colors.cardHover }}
-                >
-                  <Text style={[styles.instTime, inst.skipped && styles.instTimeSkipped]}>
-                    {formatTime(inst.time, is24)}
-                  </Text>
-                  <Text style={styles.instTag}>{inst.skipped ? 'Skipped' : 'On'}</Text>
-                </Pressable>
-              </Animated.View>
+              <View key={inst.id} style={[styles.instRow, inst.skipped && styles.instRowSkipped]}>
+                <Text style={[styles.instTime, inst.skipped && styles.instTimeSkipped]}>
+                  {formatTime(inst.time, is24)}
+                </Text>
+                <Switch
+                  value={!inst.skipped}
+                  onValueChange={(v) => setInstanceSkipped(group.id, inst.id, !v)}
+                  trackColor={{ false: colors.shimmer, true: colors.accentDim }}
+                  thumbColor={!inst.skipped ? colors.accent : '#888'}
+                />
+              </View>
             ))}
           </View>
         )}
