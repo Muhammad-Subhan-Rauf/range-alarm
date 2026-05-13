@@ -3,27 +3,43 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
 import { DateTime } from 'luxon';
 import { Check, Plus } from 'lucide-react-native';
+import { geoEquirectangular, geoPath } from 'd3-geo';
+import { feature } from 'topojson-client';
+import type { Topology, GeometryCollection } from 'topojson-specification';
+import type { FeatureCollection, Geometry } from 'geojson';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const landTopo = require('world-atlas/land-110m.json') as Topology<{ land: GeometryCollection }>;
 import { useColors, type Palette } from '@/constants/colors';
-import { CONTINENT_PATHS, TIMEZONE_CITIES, lngToX, latToY, type TimezoneCity } from '@/constants/worldMap';
+import { TIMEZONE_CITIES, type TimezoneCity } from '@/constants/worldMap';
 
 type Props = {
   /** IANA timezone strings of already-added clocks. */
   addedTimezones: Set<string>;
-  /** Called when user taps the "Add" button on a city. */
   onAdd: (city: TimezoneCity) => void;
-  /** Live clock to render offsets — passed in so we share the parent's tick. */
+  /** Live clock tick (ms epoch). */
   now: number;
 };
 
-const VB_W = 360;
-const VB_H = 180;
+const VB_W = 800;
+const VB_H = 400;
+
+// Build the projection + land path once at module load. Both are pure functions
+// of the static dataset, so there's no need to recompute per render.
+const landCollection = feature(landTopo, landTopo.objects.land) as FeatureCollection<Geometry>;
+const projection = geoEquirectangular().fitSize([VB_W, VB_H], landCollection);
+const pathGen = geoPath(projection);
+const landPath = pathGen(landCollection) ?? '';
+
+function projectPoint(lng: number, lat: number): [number, number] {
+  return projection([lng, lat]) ?? [0, 0];
+}
 
 export function WorldMapPicker({ addedTimezones, onAdd, now }: Props) {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const [selected, setSelected] = useState<TimezoneCity | null>(null);
 
-  const localOffset = DateTime.local().offset; // minutes
+  const localOffset = DateTime.local().offset;
   const selectedInfo = useMemo(() => {
     if (!selected) return null;
     const dt = DateTime.fromMillis(now).setZone(selected.timezone);
@@ -40,50 +56,43 @@ export function WorldMapPicker({ addedTimezones, onAdd, now }: Props) {
     };
   }, [selected, now, localOffset, addedTimezones]);
 
+  // Faint UTC offset bands behind the land for orientation.
+  const bandWidth = VB_W / 24;
+
   return (
     <View style={styles.wrap}>
       <View style={styles.mapBox}>
         <Svg viewBox={`0 0 ${VB_W} ${VB_H}`} width="100%" height="100%">
-          {/* Faint UTC offset bands for orientation. */}
-          <G opacity={0.06}>
+          <G opacity={0.05}>
             {Array.from({ length: 24 }).map((_, i) => (
               <Rect
                 key={i}
-                x={i * 15}
+                x={i * bandWidth}
                 y={0}
-                width={15}
+                width={bandWidth}
                 height={VB_H}
                 fill={i % 2 === 0 ? colors.text : 'transparent'}
               />
             ))}
           </G>
-          {/* Continents */}
-          <G>
-            {CONTINENT_PATHS.map((d, i) => (
-              <Path key={i} d={d} fill={colors.cardHover} stroke={colors.border} strokeWidth={0.4} />
-            ))}
-          </G>
-          {/* City dots */}
+          <Path d={landPath} fill={colors.cardHover} stroke={colors.border} strokeWidth={0.6} />
           <G>
             {TIMEZONE_CITIES.map(city => {
               const isAdded = addedTimezones.has(city.timezone);
               const isSelected = selected?.id === city.id;
-              const x = lngToX(city.lng);
-              const y = latToY(city.lat);
+              const [x, y] = projectPoint(city.lng, city.lat);
               return (
                 <G key={city.id}>
-                  {/* Halo for added cities */}
                   {isAdded && (
-                    <Circle cx={x} cy={y} r={5.5} fill={colors.accent} opacity={0.2} />
+                    <Circle cx={x} cy={y} r={10} fill={colors.accent} opacity={0.22} />
                   )}
-                  {/* Selection ring */}
                   {isSelected && (
-                    <Circle cx={x} cy={y} r={6.5} fill="none" stroke={colors.accent} strokeWidth={1.4} />
+                    <Circle cx={x} cy={y} r={11} fill="none" stroke={colors.accent} strokeWidth={2} />
                   )}
                   <Circle
                     cx={x}
                     cy={y}
-                    r={3}
+                    r={5}
                     fill={isAdded ? colors.accent : colors.text}
                     onPress={() => setSelected(city)}
                   />
@@ -108,7 +117,7 @@ export function WorldMapPicker({ addedTimezones, onAdd, now }: Props) {
             </View>
           ) : (
             <Pressable
-              onPress={() => { onAdd(selected); }}
+              onPress={() => onAdd(selected)}
               style={styles.addBtn}
               android_ripple={{ color: colors.cardHover }}
             >
