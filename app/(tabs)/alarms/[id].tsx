@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, Music2, Trash2 } from 'lucide-react-native';
+import { ChevronLeft, Image as ImageIcon, Music2, Trash2 } from 'lucide-react-native';
 import Animated, { LinearTransition } from 'react-native-reanimated';
 import { useAlarmStore } from '@/stores/useAlarmStore';
 import { RingtonePicker } from '@/components/RingtonePicker';
@@ -194,6 +194,21 @@ export default function EditGroupScreen() {
             <Music2 size={18} color={colors.accent} />
             <Text style={styles.ringName}>
               {ringtones.find(r => r.id === ringtoneId)?.name ?? 'Default alarm'}
+            </Text>
+          </View>
+        </Pressable>
+
+        <Pressable
+          style={styles.card}
+          onPress={() => router.push(`/(tabs)/alarms/background/${group.id}`)}
+        >
+          <Text style={styles.fieldLabel}>Background</Text>
+          <View style={styles.ringRow}>
+            <ImageIcon size={18} color={colors.accent} />
+            <Text style={styles.ringName}>
+              {(group.backgroundTopics?.length ?? 0) + (group.backgroundCustomImages?.length ?? 0) === 0
+                ? 'None — dark default'
+                : `${group.backgroundTopics?.length ?? 0} categories · ${group.backgroundCustomImages?.length ?? 0} custom`}
             </Text>
           </View>
         </Pressable>

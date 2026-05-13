@@ -4,7 +4,10 @@ import android.app.Activity
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -13,10 +16,13 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -25,19 +31,27 @@ import java.util.Locale
  * Full-screen UI for an active alarm. Playback / vibration / lifetime are owned
  * by RingingService; this Activity only renders the dismiss/snooze controls
  * and forwards user input back to the service.
+ *
+ * If the payload includes background URIs, they're shown as a crossfading
+ * slideshow with a slow Ken Burns pan whose direction alternates per image.
  */
 class RingingActivity : Activity() {
 
   private var instanceId: String? = null
   private val tickHandler = Handler(Looper.getMainLooper())
+  private val slideshowHandler = Handler(Looper.getMainLooper())
   private var clockView: TextView? = null
+  private var slideshowImageViews: Array<ImageView>? = null
+  private var slideshowCurrent = 0
+  private var slideshowIndex = 0
+  private var slideshowUris: List<String> = emptyList()
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     setupWindow()
     instanceId = intent.getStringExtra(EXTRA_INSTANCE_ID)
     val alarm = instanceId?.let { AlarmRegistry.get(this, it) }
-    setContentView(buildUi(alarm?.label.orEmpty()))
+    setContentView(buildUi(alarm?.label.orEmpty(), alarm?.backgroundUris ?: emptyList()))
   }
 
   override fun onNewIntent(intent: Intent) {
@@ -49,6 +63,7 @@ class RingingActivity : Activity() {
   override fun onDestroy() {
     super.onDestroy()
     tickHandler.removeCallbacksAndMessages(null)
+    slideshowHandler.removeCallbacksAndMessages(null)
   }
 
   override fun onBackPressed() {
@@ -74,15 +89,63 @@ class RingingActivity : Activity() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
       km?.requestDismissKeyguard(this, null)
     }
-    window.statusBarColor = Color.parseColor("#0B0B14")
-    window.navigationBarColor = Color.parseColor("#0B0B14")
+    window.statusBarColor = Color.TRANSPARENT
+    window.navigationBarColor = Color.TRANSPARENT
   }
 
-  private fun buildUi(label: String): View {
+  private fun buildUi(label: String, backgroundUris: List<String>): View {
+    val outer = FrameLayout(this).apply {
+      layoutParams = FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.MATCH_PARENT,
+      )
+      setBackgroundColor(Color.parseColor("#0E0E10"))
+    }
+
+    // Slideshow stack: two ImageViews that crossfade between source bitmaps.
+    val pool = backgroundUris.filter { uri ->
+      runCatching {
+        val parsed = Uri.parse(uri)
+        val path = parsed.path ?: uri
+        File(path).exists()
+      }.getOrDefault(false)
+    }
+    if (pool.isNotEmpty()) {
+      val ivs = Array(2) {
+        ImageView(this).apply {
+          scaleType = ImageView.ScaleType.CENTER_CROP
+          layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+          )
+          alpha = 0f
+        }
+      }
+      ivs.forEach { outer.addView(it) }
+      slideshowImageViews = ivs
+      slideshowUris = pool
+
+      val scrim = View(this).apply {
+        background = GradientDrawable(
+          GradientDrawable.Orientation.TOP_BOTTOM,
+          intArrayOf(
+            Color.parseColor("#B3000000"),
+            Color.parseColor("#66000000"),
+            Color.parseColor("#B3000000"),
+          ),
+        )
+        layoutParams = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          ViewGroup.LayoutParams.MATCH_PARENT,
+        )
+      }
+      outer.addView(scrim)
+      startSlideshow(immediate = true)
+    }
+
     val root = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER
-      setBackgroundColor(Color.parseColor("#0B0B14"))
       setPadding(dp(32), dp(64), dp(32), dp(64))
       layoutParams = FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -94,14 +157,16 @@ class RingingActivity : Activity() {
       setTextColor(Color.WHITE)
       gravity = Gravity.CENTER
       text = currentClock()
+      setShadowLayer(8f, 0f, 2f, Color.parseColor("#80000000"))
     }
     clockView = clock
     val labelView = TextView(this).apply {
       textSize = 22f
-      setTextColor(Color.parseColor("#A9B0C9"))
+      setTextColor(Color.parseColor("#E6FFFFFF"))
       gravity = Gravity.CENTER
       text = label.ifBlank { "Alarm" }
       setPadding(0, dp(16), 0, dp(64))
+      setShadowLayer(6f, 0f, 2f, Color.parseColor("#80000000"))
     }
     val buttonRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
@@ -111,14 +176,14 @@ class RingingActivity : Activity() {
     val snoozeBtn = Button(this).apply {
       text = "SNOOZE"
       setTextColor(Color.WHITE)
-      setBackgroundColor(Color.parseColor("#3A3F58"))
+      setBackgroundColor(Color.parseColor("#403A3F58"))
       setPadding(dp(32), dp(20), dp(32), dp(20))
       setOnClickListener { onSnooze() }
     }
     val dismissBtn = Button(this).apply {
       text = "DISMISS"
       setTextColor(Color.parseColor("#0B0B14"))
-      setBackgroundColor(Color.parseColor("#7BE0BE"))
+      setBackgroundColor(Color.parseColor("#D8C9A8"))
       setPadding(dp(32), dp(20), dp(32), dp(20))
       setOnClickListener { onDismiss() }
     }
@@ -132,8 +197,65 @@ class RingingActivity : Activity() {
     root.addView(labelView)
     root.addView(buttonRow)
     scheduleClockTick()
-    return root
+    outer.addView(root)
+    return outer
   }
+
+  // ---- Slideshow ---------------------------------------------------------
+
+  private val slideDurationMs = 8000L
+  private val crossfadeMs = 1200L
+
+  private fun startSlideshow(immediate: Boolean) {
+    val ivs = slideshowImageViews ?: return
+    if (slideshowUris.isEmpty()) return
+    val nextIdx = slideshowIndex % slideshowUris.size
+    val uri = slideshowUris[nextIdx]
+    val bmp = runCatching {
+      val parsed = Uri.parse(uri)
+      val path = parsed.path ?: uri
+      BitmapFactory.decodeFile(path)
+    }.getOrNull()
+    if (bmp == null) {
+      slideshowIndex++
+      slideshowHandler.postDelayed({ startSlideshow(immediate) }, 50)
+      return
+    }
+    val incoming = ivs[1 - slideshowCurrent]
+    val outgoing = ivs[slideshowCurrent]
+    incoming.setImageBitmap(bmp)
+    incoming.alpha = if (immediate) 1f else 0f
+
+    // Ken Burns: alternate horizontal pan direction per slide, with a slight zoom.
+    val direction = if (slideshowIndex % 2 == 0) 1f else -1f
+    val pan = dp(36).toFloat()
+    incoming.translationX = -pan * direction
+    incoming.scaleX = 1f
+    incoming.scaleY = 1f
+    incoming.animate()
+      .translationX(pan * direction)
+      .scaleX(1.08f)
+      .scaleY(1.08f)
+      .alpha(1f)
+      .setDuration(slideDurationMs + crossfadeMs)
+      .setInterpolator(AccelerateDecelerateInterpolator())
+      .start()
+
+    if (!immediate) {
+      outgoing.animate()
+        .alpha(0f)
+        .setDuration(crossfadeMs)
+        .start()
+    }
+    slideshowCurrent = 1 - slideshowCurrent
+    slideshowIndex++
+
+    if (slideshowUris.size > 1) {
+      slideshowHandler.postDelayed({ startSlideshow(false) }, slideDurationMs)
+    }
+  }
+
+  // ---- Clock + helpers ---------------------------------------------------
 
   private fun scheduleClockTick() {
     tickHandler.postDelayed(object : Runnable {

@@ -14,6 +14,7 @@ export default function AlarmsStack() {
       <Stack.Screen name="index" />
       <Stack.Screen name="new" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
       <Stack.Screen name="[id]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="background/[id]" options={{ presentation: 'card', animation: 'slide_from_right' }} />
     </Stack>
   );
 }

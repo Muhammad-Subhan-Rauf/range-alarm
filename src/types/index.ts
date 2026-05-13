@@ -31,6 +31,10 @@ export interface AlarmGroup {
   snoozeMaxRepeats: number;
   vibrate: boolean;
   enabled: boolean;
+  /** Pexels topic ids (see src/constants/backgrounds.ts). Empty = dark default. */
+  backgroundTopics: string[];
+  /** Local file:// URIs for user-uploaded background images. */
+  backgroundCustomImages: string[];
   createdAt: number;
   updatedAt: number;
 }

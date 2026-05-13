@@ -4,6 +4,8 @@ export type AlarmPayload = {
   triggerAtMs: number;
   label: string;
   ringtoneUri: string;
+  /** Optional local file URIs (multiple = slideshow with Ken Burns pan). */
+  backgroundUris?: string[];
   vibrate: boolean;
   snoozeMs: number;
   snoozeMaxRepeats: number;

@@ -37,6 +37,8 @@ async function migrate(d: SQLite.SQLiteDatabase): Promise<void> {
       snoozeMaxRepeats INTEGER NOT NULL,
       vibrate INTEGER NOT NULL,
       enabled INTEGER NOT NULL,
+      backgroundTopics TEXT NOT NULL DEFAULT '[]',
+      backgroundCustomImages TEXT NOT NULL DEFAULT '[]',
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL
     );
@@ -75,6 +77,13 @@ async function migrate(d: SQLite.SQLiteDatabase): Promise<void> {
       v TEXT NOT NULL
     );
   `);
+  // Forward-compat: if an older install is missing columns, add them.
+  for (const col of [
+    `backgroundTopics TEXT NOT NULL DEFAULT '[]'`,
+    `backgroundCustomImages TEXT NOT NULL DEFAULT '[]'`,
+  ]) {
+    try { await d.execAsync(`ALTER TABLE alarm_groups ADD COLUMN ${col}`); } catch { /* already present */ }
+  }
 }
 
 // --- Mappers ----------------------------------------------------------------
@@ -91,9 +100,21 @@ const toGroup = (r: any): AlarmGroup => ({
   snoozeMaxRepeats: r.snoozeMaxRepeats,
   vibrate: !!r.vibrate,
   enabled: !!r.enabled,
+  backgroundTopics: parseTopics(r.backgroundTopics),
+  backgroundCustomImages: parseTopics(r.backgroundCustomImages),
   createdAt: r.createdAt,
   updatedAt: r.updatedAt,
 });
+
+const parseTopics = (raw: unknown): string[] => {
+  if (typeof raw !== 'string' || !raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+};
 
 const toInstance = (r: any): AlarmInstance => ({
   id: r.id,
@@ -124,8 +145,8 @@ export async function getGroup(id: string): Promise<AlarmGroup | null> {
 export async function upsertGroup(g: AlarmGroup): Promise<void> {
   const d = await db();
   await d.runAsync(
-    `INSERT INTO alarm_groups (id,label,startHour,startMinute,endHour,endMinute,stepMinutes,repeatDays,ringtoneId,snoozeMs,snoozeMaxRepeats,vibrate,enabled,createdAt,updatedAt)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO alarm_groups (id,label,startHour,startMinute,endHour,endMinute,stepMinutes,repeatDays,ringtoneId,snoozeMs,snoozeMaxRepeats,vibrate,enabled,backgroundTopics,backgroundCustomImages,createdAt,updatedAt)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET
        label=excluded.label,
        startHour=excluded.startHour,
@@ -139,11 +160,16 @@ export async function upsertGroup(g: AlarmGroup): Promise<void> {
        snoozeMaxRepeats=excluded.snoozeMaxRepeats,
        vibrate=excluded.vibrate,
        enabled=excluded.enabled,
+       backgroundTopics=excluded.backgroundTopics,
+       backgroundCustomImages=excluded.backgroundCustomImages,
        updatedAt=excluded.updatedAt`,
     [
       g.id, g.label, g.start.hour, g.start.minute, g.end.hour, g.end.minute,
       g.stepMinutes, g.repeatDays, g.ringtoneId, g.snoozeMs, g.snoozeMaxRepeats,
-      g.vibrate ? 1 : 0, g.enabled ? 1 : 0, g.createdAt, g.updatedAt,
+      g.vibrate ? 1 : 0, g.enabled ? 1 : 0,
+      JSON.stringify(g.backgroundTopics ?? []),
+      JSON.stringify(g.backgroundCustomImages ?? []),
+      g.createdAt, g.updatedAt,
     ],
   );
 }

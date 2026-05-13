@@ -79,27 +79,20 @@ export function expandGroup(g: AlarmGroup, previous: AlarmInstance[] = []): Alar
  * passed, otherwise tomorrow). Repeating: the soonest day in the mask.
  */
 /**
- * Grace window: if the configured slot is up to GRACE_MS in the past, still
- * fire it today (scheduled ~2 s from now). Past that, push to the next valid
- * day. This prevents a "13:14" alarm from silently slipping to tomorrow if
- * the user saves the range at 13:14:30.
+ * Strict future-only scheduling. An alarm whose configured slot is already in
+ * the past (even by a second) is pushed to its next occurrence, never fired
+ * the same minute it was saved. This is intentional — the old grace window
+ * caused duplicate fires when a slot fell exactly on the save moment.
  */
-const GRACE_MS = 60_000;
-
 export function nextFireMs(
   time: TimeOfDay,
   repeatDays: DayMask,
   now: DateTime = DateTime.local(),
 ): number {
-  const nowMs = now.toMillis();
   const todayFire = now.set({ hour: time.hour, minute: time.minute, second: 0, millisecond: 0 });
-  const todayMs = todayFire.toMillis();
-
   if (!repeatDays) {
-    if (todayMs + GRACE_MS > nowMs) return Math.max(todayMs, nowMs + 2_000);
-    return todayFire.plus({ days: 1 }).toMillis();
+    return (todayFire > now ? todayFire : todayFire.plus({ days: 1 })).toMillis();
   }
-
   for (let offset = 0; offset < 8; offset++) {
     const candidate = now
       .plus({ days: offset })
@@ -107,9 +100,7 @@ export function nextFireMs(
     // Luxon weekday: Mon=1..Sun=7. Convert to our Sun=0 then bit position.
     const sundayBased = candidate.weekday % 7; // Sun=0..Sat=6
     const bit = 1 << sundayBased;
-    if ((repeatDays & bit) === 0) continue;
-    const candidateMs = candidate.toMillis();
-    if (candidateMs + GRACE_MS > nowMs) return Math.max(candidateMs, nowMs + 2_000);
+    if ((repeatDays & bit) !== 0 && candidate > now) return candidate.toMillis();
   }
   // Fallback: tomorrow same time (shouldn't reach with a non-zero mask).
   return now

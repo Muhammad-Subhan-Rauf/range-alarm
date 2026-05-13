@@ -2,6 +2,7 @@ import { DateTime } from 'luxon';
 import { nativeAlarm, type AlarmPayload } from 'native-alarm';
 import * as dbApi from './db';
 import { expandGroup, nextFireMs } from './timeUtils';
+import { poolForGroup } from './backgroundService';
 import type { AlarmGroup, AlarmInstance, Ringtone } from '@/types';
 
 /**
@@ -14,14 +15,28 @@ function resolveRingtoneUri(ringtoneId: string, ringtones: Ringtone[]): string {
   return r?.uri ?? '';
 }
 
-function buildPayloads(
+const MAX_BG_URIS = 10;
+
+function shuffled<T>(arr: T[]): T[] {
+  const copy = arr.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+async function buildPayloads(
   group: AlarmGroup,
   instances: AlarmInstance[],
   ringtones: Ringtone[],
   now: DateTime = DateTime.local(),
-): AlarmPayload[] {
+): Promise<AlarmPayload[]> {
   if (!group.enabled) return [];
   const ringtoneUri = resolveRingtoneUri(group.ringtoneId, ringtones);
+  const pool = await poolForGroup(group);
+  // Each instance gets its own shuffled subset so slideshows don't all start
+  // with the same image when many alarms fire in quick succession.
   return instances
     .filter(i => !i.skipped)
     .map<AlarmPayload>(i => ({
@@ -30,6 +45,7 @@ function buildPayloads(
       triggerAtMs: nextFireMs(i.time, group.repeatDays, now),
       label: group.label || 'Alarm',
       ringtoneUri,
+      backgroundUris: pool.length ? shuffled(pool).slice(0, MAX_BG_URIS) : [],
       vibrate: group.vibrate,
       snoozeMs: group.snoozeMs,
       snoozeMaxRepeats: group.snoozeMaxRepeats,
@@ -47,7 +63,7 @@ export async function applyGroup(
   await dbApi.upsertGroup(group);
   await dbApi.replaceInstances(group.id, instances);
   await nativeAlarm.cancelGroup(group.id);
-  const payloads = buildPayloads(group, instances, ringtones);
+  const payloads = await buildPayloads(group, instances, ringtones);
   if (payloads.length) await nativeAlarm.scheduleMany(payloads);
   return instances;
 }
@@ -75,7 +91,7 @@ export async function setGroupEnabled(
     await nativeAlarm.cancelGroup(group.id);
   } else {
     const instances = await dbApi.listInstances(group.id);
-    const payloads = buildPayloads(updated, instances, ringtones);
+    const payloads = await buildPayloads(updated, instances, ringtones);
     await nativeAlarm.cancelGroup(group.id);
     if (payloads.length) await nativeAlarm.scheduleMany(payloads);
   }
@@ -127,7 +143,7 @@ export async function reconcileOnLaunch(ringtones: Ringtone[]): Promise<void> {
   for (const g of groups) {
     if (!g.enabled) continue;
     const instances = await dbApi.listInstances(g.id);
-    const payloads = buildPayloads(g, instances, ringtones, now);
+    const payloads = await buildPayloads(g, instances, ringtones, now);
     payloads.forEach(p => expectedIds.add(p.instanceId));
     const missing = payloads.filter(p => !scheduledIds.has(p.instanceId));
     if (missing.length) await nativeAlarm.scheduleMany(missing);

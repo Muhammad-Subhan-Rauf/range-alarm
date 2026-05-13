@@ -112,6 +112,7 @@ class NativeAlarmModule : Module() {
     triggerAtMs = (this["triggerAtMs"] as? Number)?.toLong() ?: error("triggerAtMs required"),
     label = (this["label"] as? String).orEmpty(),
     ringtoneUri = (this["ringtoneUri"] as? String).orEmpty(),
+    backgroundUris = ((this["backgroundUris"] as? List<*>)?.mapNotNull { it as? String }) ?: emptyList(),
     vibrate = (this["vibrate"] as? Boolean) ?: true,
     snoozeMs = (this["snoozeMs"] as? Number)?.toLong() ?: (9L * 60_000L),
     snoozeMaxRepeats = (this["snoozeMaxRepeats"] as? Number)?.toInt() ?: 0,

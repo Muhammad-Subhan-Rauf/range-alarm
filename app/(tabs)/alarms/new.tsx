@@ -51,6 +51,8 @@ export default function NewAlarmScreen() {
     snoozeMaxRepeats: snoozeMax,
     vibrate,
     enabled: true,
+    backgroundTopics: [],
+    backgroundCustomImages: [],
     createdAt: 0,
     updatedAt: 0,
   }), [label, startH, startM, endH, endM, isRange, step, repeatDays, ringtoneId, snoozeMin, snoozeMax, vibrate]);

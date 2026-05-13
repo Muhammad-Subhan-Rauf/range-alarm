@@ -58,6 +58,7 @@ desktop.ini
 .env
 .env.*
 !.env.example
+/src/config/pexels.ts
 
 # TypeScript
 *.tsbuildinfo
