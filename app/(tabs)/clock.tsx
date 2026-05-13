@@ -7,6 +7,7 @@ import { DateTime } from 'luxon';
 import { useNow } from '@/hooks/useNow';
 import { useWorldClockStore } from '@/stores/useWorldClockStore';
 import { WorldClockCard } from '@/components/WorldClockCard';
+import { WorldMapPicker } from '@/components/WorldMapPicker';
 import { useColors, type Palette } from '@/constants/colors';
 
 const COMMON_ZONES: { label: string; tz: string }[] = [
@@ -73,14 +74,16 @@ export default function ClockScreen() {
           setOpen(false);
         }}
         already={new Set(clocks.map(c => c.timezone))}
+        now={now}
       />
     </SafeAreaView>
   );
 }
 
-function AddZoneModal({ visible, onClose, onAdd, already }: { visible: boolean; onClose: () => void; onAdd: (label: string, tz: string) => void | Promise<void>; already: Set<string> }) {
+function AddZoneModal({ visible, onClose, onAdd, already, now }: { visible: boolean; onClose: () => void; onAdd: (label: string, tz: string) => void | Promise<void>; already: Set<string>; now: number }) {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const [mode, setMode] = useState<'map' | 'list'>('map');
   const [query, setQuery] = useState('');
   const filtered = useMemo(
     () => COMMON_ZONES.filter(z =>
@@ -93,38 +96,58 @@ function AddZoneModal({ visible, onClose, onAdd, already }: { visible: boolean; 
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <Animated.View entering={FadeIn.duration(140)} exiting={FadeOut.duration(120)} style={styles.backdrop}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <Animated.View entering={SlideInDown.springify().damping(18)} style={styles.sheet}>
+        <Animated.View entering={SlideInDown.duration(220)} style={styles.sheet}>
           <View style={styles.handle} />
           <Text style={styles.sheetTitle}>Add timezone</Text>
-          <View style={styles.searchRow}>
-            <Search size={16} color={colors.textDim} />
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search cities or zones…"
-              placeholderTextColor={colors.textDim}
-              style={styles.searchInput}
-              autoFocus
-            />
+          <View style={styles.modeRow}>
+            <Pressable onPress={() => setMode('map')} style={[styles.modeBtn, mode === 'map' && styles.modeBtnActive]}>
+              <Text style={[styles.modeTxt, mode === 'map' && styles.modeTxtActive]}>Map</Text>
+            </Pressable>
+            <Pressable onPress={() => setMode('list')} style={[styles.modeBtn, mode === 'list' && styles.modeBtnActive]}>
+              <Text style={[styles.modeTxt, mode === 'list' && styles.modeTxtActive]}>Search</Text>
+            </Pressable>
           </View>
-          <FlatList
-            data={filtered}
-            keyExtractor={(z) => z.tz}
-            renderItem={({ item }) => (
-              <Pressable
-                onPress={() => onAdd(item.label, item.tz)}
-                style={styles.zoneRow}
-                android_ripple={{ color: colors.cardHover }}
-              >
-                <View>
-                  <Text style={styles.zoneLabel}>{item.label}</Text>
-                  <Text style={styles.zoneTz}>{item.tz}</Text>
-                </View>
-                <Text style={styles.zoneTime}>{DateTime.now().setZone(item.tz).toFormat('HH:mm')}</Text>
-              </Pressable>
-            )}
-            ItemSeparatorComponent={() => <View style={styles.sep} />}
-          />
+
+          {mode === 'map' ? (
+            <View style={{ paddingTop: 6 }}>
+              <WorldMapPicker
+                addedTimezones={already}
+                now={now}
+                onAdd={(city) => onAdd(city.label, city.timezone)}
+              />
+            </View>
+          ) : (
+            <>
+              <View style={styles.searchRow}>
+                <Search size={16} color={colors.textDim} />
+                <TextInput
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="Search cities or zones…"
+                  placeholderTextColor={colors.textDim}
+                  style={styles.searchInput}
+                />
+              </View>
+              <FlatList
+                data={filtered}
+                keyExtractor={(z) => z.tz}
+                renderItem={({ item }) => (
+                  <Pressable
+                    onPress={() => onAdd(item.label, item.tz)}
+                    style={styles.zoneRow}
+                    android_ripple={{ color: colors.cardHover }}
+                  >
+                    <View>
+                      <Text style={styles.zoneLabel}>{item.label}</Text>
+                      <Text style={styles.zoneTz}>{item.tz}</Text>
+                    </View>
+                    <Text style={styles.zoneTime}>{DateTime.fromMillis(now).setZone(item.tz).toFormat('HH:mm')}</Text>
+                  </Pressable>
+                )}
+                ItemSeparatorComponent={() => <View style={styles.sep} />}
+              />
+            </>
+          )}
         </Animated.View>
       </Animated.View>
     </Modal>
@@ -153,7 +176,12 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     maxHeight: '85%',
   },
   handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: 12 },
-  sheetTitle: { color: colors.text, fontSize: 18, fontWeight: '600', marginBottom: 12 },
+  sheetTitle: { color: colors.text, fontSize: 18, fontWeight: '600', marginBottom: 10 },
+  modeRow: { flexDirection: 'row', backgroundColor: colors.bgElevated, borderRadius: 10, padding: 3, marginBottom: 12 },
+  modeBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
+  modeBtnActive: { backgroundColor: colors.accent },
+  modeTxt: { color: colors.textMuted, fontWeight: '600', fontSize: 13 },
+  modeTxtActive: { color: colors.accentOn },
   searchRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: 12, paddingHorizontal: 12, gap: 8 },
   searchInput: { color: colors.text, flex: 1, paddingVertical: 10 },
   zoneRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14 },
