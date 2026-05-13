@@ -6,6 +6,10 @@ export type AlarmPayload = {
   ringtoneUri: string;
   /** Optional local file URIs (multiple = slideshow with Ken Burns pan). */
   backgroundUris?: string[];
+  /** 'none' or 'shape' — gate the Dismiss button behind a trace-the-shape challenge. */
+  dismissChallenge?: 'none' | 'shape';
+  /** If true and challenge != 'none', Snooze is also gated. */
+  challengeBlocksSnooze?: boolean;
   vibrate: boolean;
   snoozeMs: number;
   snoozeMaxRepeats: number;

@@ -140,22 +140,14 @@ class RingingService : Service() {
       },
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
-    val dismissPI = PendingIntent.getService(
-      this,
-      Scheduler.requestCode("svc:dismiss:" + alarm.instanceId),
-      Intent(this, RingingService::class.java).setAction(ACTION_DISMISS),
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
-    val snoozePI = PendingIntent.getService(
-      this,
-      Scheduler.requestCode("svc:snooze:" + alarm.instanceId),
-      Intent(this, RingingService::class.java).setAction(ACTION_SNOOZE),
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
-    return NotificationCompat.Builder(this, CHANNEL_ID)
+    val challenge = alarm.dismissChallenge != "none"
+    val dismissGated = challenge
+    val snoozeGated = challenge && alarm.challengeBlocksSnooze
+
+    val builder = NotificationCompat.Builder(this, CHANNEL_ID)
       .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
       .setContentTitle(alarm.label.ifBlank { "Alarm" })
-      .setContentText("Tap to open")
+      .setContentText(if (dismissGated || snoozeGated) "Tap to open and complete the challenge" else "Tap to open")
       .setCategory(NotificationCompat.CATEGORY_ALARM)
       .setPriority(NotificationCompat.PRIORITY_MAX)
       .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -163,9 +155,26 @@ class RingingService : Service() {
       .setAutoCancel(false)
       .setContentIntent(openActivity)
       .setFullScreenIntent(openActivity, true)
-      .addAction(android.R.drawable.ic_lock_idle_alarm, "Snooze", snoozePI)
-      .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Dismiss", dismissPI)
-      .build()
+
+    if (!snoozeGated) {
+      val snoozePI = PendingIntent.getService(
+        this,
+        Scheduler.requestCode("svc:snooze:" + alarm.instanceId),
+        Intent(this, RingingService::class.java).setAction(ACTION_SNOOZE),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+      )
+      builder.addAction(android.R.drawable.ic_lock_idle_alarm, "Snooze", snoozePI)
+    }
+    if (!dismissGated) {
+      val dismissPI = PendingIntent.getService(
+        this,
+        Scheduler.requestCode("svc:dismiss:" + alarm.instanceId),
+        Intent(this, RingingService::class.java).setAction(ACTION_DISMISS),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+      )
+      builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Dismiss", dismissPI)
+    }
+    return builder.build()
   }
 
   private fun startRinging(alarm: ScheduledAlarm) {

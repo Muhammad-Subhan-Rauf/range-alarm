@@ -10,6 +10,8 @@ data class ScheduledAlarm(
   val label: String,
   val ringtoneUri: String,
   val backgroundUris: List<String>,
+  val dismissChallenge: String,
+  val challengeBlocksSnooze: Boolean,
   val vibrate: Boolean,
   val snoozeMs: Long,
   val snoozeMaxRepeats: Int,
@@ -23,6 +25,8 @@ data class ScheduledAlarm(
     put("label", label)
     put("ringtoneUri", ringtoneUri)
     put("backgroundUris", JSONArray(backgroundUris))
+    put("dismissChallenge", dismissChallenge)
+    put("challengeBlocksSnooze", challengeBlocksSnooze)
     put("vibrate", vibrate)
     put("snoozeMs", snoozeMs)
     put("snoozeMaxRepeats", snoozeMaxRepeats)
@@ -38,7 +42,6 @@ data class ScheduledAlarm(
       if (arr != null) {
         for (i in 0 until arr.length()) uris.add(arr.optString(i))
       } else {
-        // Backward compat with older payloads that stored a single string.
         val single = o.optString("backgroundUri", "")
         if (single.isNotBlank()) uris.add(single)
       }
@@ -49,6 +52,8 @@ data class ScheduledAlarm(
         label = o.optString("label", ""),
         ringtoneUri = o.optString("ringtoneUri", ""),
         backgroundUris = uris,
+        dismissChallenge = o.optString("dismissChallenge", "none"),
+        challengeBlocksSnooze = o.optBoolean("challengeBlocksSnooze", false),
         vibrate = o.optBoolean("vibrate", true),
         snoozeMs = o.optLong("snoozeMs", 9 * 60_000L),
         snoozeMaxRepeats = o.optInt("snoozeMaxRepeats", 0),

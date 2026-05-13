@@ -46,6 +46,8 @@ async function buildPayloads(
       label: group.label || 'Alarm',
       ringtoneUri,
       backgroundUris: pool.length ? shuffled(pool).slice(0, MAX_BG_URIS) : [],
+      dismissChallenge: group.dismissChallenge ?? 'none',
+      challengeBlocksSnooze: group.challengeBlocksSnooze ?? false,
       vibrate: group.vibrate,
       snoozeMs: group.snoozeMs,
       snoozeMaxRepeats: group.snoozeMaxRepeats,

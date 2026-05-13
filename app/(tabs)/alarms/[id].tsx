@@ -34,6 +34,8 @@ export default function EditGroupScreen() {
   const [snoozeMin, setSnoozeMin] = useState(Math.round((group?.snoozeMs ?? 9 * 60_000) / 60_000));
   const [snoozeMax, setSnoozeMax] = useState(group?.snoozeMaxRepeats ?? 0);
   const [vibrate, setVibrate] = useState(group?.vibrate ?? true);
+  const [dismissChallenge, setDismissChallenge] = useState<'none' | 'shape'>(group?.dismissChallenge ?? 'none');
+  const [challengeBlocksSnooze, setChallengeBlocksSnooze] = useState<boolean>(group?.challengeBlocksSnooze ?? false);
   const [ringtoneOpen, setRingtoneOpen] = useState(false);
   const [startH, setStartH] = useState(group?.start.hour ?? 8);
   const [startM, setStartM] = useState(group?.start.minute ?? 0);
@@ -69,6 +71,8 @@ export default function EditGroupScreen() {
       snoozeMs: snoozeMin * 60_000,
       snoozeMaxRepeats: snoozeMax,
       vibrate,
+      dismissChallenge,
+      challengeBlocksSnooze: dismissChallenge === 'shape' ? challengeBlocksSnooze : false,
       start: { hour: startH, minute: startM },
       end: single ? { hour: startH, minute: startM } : { hour: endH, minute: endM },
       stepMinutes: single ? 0 : step,
@@ -223,6 +227,45 @@ export default function EditGroupScreen() {
           </View>
         </View>
 
+        <View style={styles.card}>
+          <Text style={styles.fieldLabel}>Dismiss challenge</Text>
+          <View style={styles.challengeRow}>
+            <Pressable
+              onPress={() => setDismissChallenge('none')}
+              style={[styles.challengeBtn, dismissChallenge === 'none' && styles.challengeBtnActive]}
+            >
+              <Text style={[styles.challengeTxt, dismissChallenge === 'none' && styles.challengeTxtActive]}>None</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setDismissChallenge('shape')}
+              style={[styles.challengeBtn, dismissChallenge === 'shape' && styles.challengeBtnActive]}
+            >
+              <Text style={[styles.challengeTxt, dismissChallenge === 'shape' && styles.challengeTxtActive]}>Trace shape</Text>
+            </Pressable>
+          </View>
+          {dismissChallenge === 'shape' && (
+            <>
+              <Text style={styles.challengeHint}>
+                Trace today&apos;s shape to unlock the alarm. Shape rotates daily.
+              </Text>
+              <View style={[styles.rowBetween, { marginTop: 14 }]}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text style={styles.ringName}>Also block Snooze</Text>
+                  <Text style={styles.challengeHint}>
+                    Snooze requires the same trace. Hides notification actions so it can&apos;t be bypassed.
+                  </Text>
+                </View>
+                <Switch
+                  value={challengeBlocksSnooze}
+                  onValueChange={setChallengeBlocksSnooze}
+                  trackColor={{ false: colors.shimmer, true: colors.accentDim }}
+                  thumbColor={challengeBlocksSnooze ? colors.accent : '#888'}
+                />
+              </View>
+            </>
+          )}
+        </View>
+
         <View style={[styles.card, styles.rowBetween]}>
           <Text style={styles.fieldLabel}>Vibrate</Text>
           <Switch
@@ -369,6 +412,12 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   snoozeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   snoozeLabel: { color: colors.textMuted, fontSize: 14 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  challengeRow: { flexDirection: 'row', backgroundColor: colors.bgElevated, borderRadius: 12, padding: 3 },
+  challengeBtn: { flex: 1, paddingVertical: 10, borderRadius: 9, alignItems: 'center' },
+  challengeBtnActive: { backgroundColor: colors.accent },
+  challengeTxt: { color: colors.textMuted, fontWeight: '600', fontSize: 13 },
+  challengeTxtActive: { color: colors.accentOn },
+  challengeHint: { color: colors.textDim, fontSize: 12, marginTop: 10 },
   instRow: {
     flexDirection: 'row',
     alignItems: 'center',

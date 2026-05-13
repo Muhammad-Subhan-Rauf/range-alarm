@@ -6,38 +6,43 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.format.DateFormat
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import java.io.File
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 /**
- * Full-screen UI for an active alarm. Playback / vibration / lifetime are owned
- * by RingingService; this Activity only renders the dismiss/snooze controls
- * and forwards user input back to the service.
- *
- * If the payload includes background URIs, they're shown as a crossfading
- * slideshow with a slow Ken Burns pan whose direction alternates per image.
+ * Full-screen UI for an active alarm.
+ *  - Slideshow + Ken Burns pan in the background.
+ *  - Greeting, big clock, date, label, two pill buttons.
+ *  - Optional dismiss challenge (trace today's shape) that gates the Dismiss
+ *    button.
+ * Lifetime is owned by RingingService; this Activity only renders and forwards
+ * Snooze/Dismiss user intent back.
  */
 class RingingActivity : Activity() {
 
   private var instanceId: String? = null
+  private var dismissButton: PillButton? = null
+  private var snoozeButton: PillButton? = null
   private val tickHandler = Handler(Looper.getMainLooper())
   private val slideshowHandler = Handler(Looper.getMainLooper())
   private var clockView: TextView? = null
@@ -45,12 +50,17 @@ class RingingActivity : Activity() {
   private var slideshowCurrent = 0
   private var slideshowIndex = 0
   private var slideshowUris: List<String> = emptyList()
+  private var dismissRequiresChallenge = false
+  private var snoozeRequiresChallenge = false
+  private var challengeUnlocked = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     setupWindow()
     instanceId = intent.getStringExtra(EXTRA_INSTANCE_ID)
     val alarm = instanceId?.let { AlarmRegistry.get(this, it) }
+    dismissRequiresChallenge = alarm?.dismissChallenge == "shape"
+    snoozeRequiresChallenge = dismissRequiresChallenge && alarm?.challengeBlocksSnooze == true
     setContentView(buildUi(alarm?.label.orEmpty(), alarm?.backgroundUris ?: emptyList()))
   }
 
@@ -102,7 +112,6 @@ class RingingActivity : Activity() {
       setBackgroundColor(Color.parseColor("#0E0E10"))
     }
 
-    // Slideshow stack: two ImageViews that crossfade between source bitmaps.
     val pool = backgroundUris.filter { uri ->
       runCatching {
         val parsed = Uri.parse(uri)
@@ -129,9 +138,9 @@ class RingingActivity : Activity() {
         background = GradientDrawable(
           GradientDrawable.Orientation.TOP_BOTTOM,
           intArrayOf(
-            Color.parseColor("#B3000000"),
-            Color.parseColor("#66000000"),
-            Color.parseColor("#B3000000"),
+            Color.parseColor("#CC000000"),
+            Color.parseColor("#33000000"),
+            Color.parseColor("#CC000000"),
           ),
         )
         layoutParams = FrameLayout.LayoutParams(
@@ -145,60 +154,164 @@ class RingingActivity : Activity() {
 
     val root = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
-      gravity = Gravity.CENTER
-      setPadding(dp(32), dp(64), dp(32), dp(64))
+      gravity = Gravity.CENTER_HORIZONTAL
+      setPadding(dp(28), dp(64), dp(28), dp(56))
       layoutParams = FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.MATCH_PARENT,
       )
     }
+
+    val greeting = TextView(this).apply {
+      text = greetingForNow()
+      textSize = 16f
+      setTextColor(Color.parseColor("#D8C9A8"))
+      letterSpacing = 0.18f
+      typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+      gravity = Gravity.CENTER
+      setShadowLayer(5f, 0f, 2f, Color.parseColor("#80000000"))
+    }
+
     val clock = TextView(this).apply {
-      textSize = 84f
+      textSize = 96f
       setTextColor(Color.WHITE)
+      typeface = Typeface.create("sans-serif-thin", Typeface.NORMAL)
       gravity = Gravity.CENTER
       text = currentClock()
-      setShadowLayer(8f, 0f, 2f, Color.parseColor("#80000000"))
+      setShadowLayer(10f, 0f, 4f, Color.parseColor("#80000000"))
+      setPadding(0, dp(8), 0, 0)
     }
     clockView = clock
-    val labelView = TextView(this).apply {
-      textSize = 22f
+
+    val date = TextView(this).apply {
+      textSize = 16f
       setTextColor(Color.parseColor("#E6FFFFFF"))
+      typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+      gravity = Gravity.CENTER
+      text = SimpleDateFormat("EEEE, d MMM", Locale.getDefault()).format(Date())
+      setShadowLayer(5f, 0f, 2f, Color.parseColor("#80000000"))
+      setPadding(0, dp(4), 0, 0)
+    }
+
+    val labelView = TextView(this).apply {
+      textSize = 18f
+      setTextColor(Color.WHITE)
+      typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
       gravity = Gravity.CENTER
       text = label.ifBlank { "Alarm" }
-      setPadding(0, dp(16), 0, dp(64))
       setShadowLayer(6f, 0f, 2f, Color.parseColor("#80000000"))
+      setPadding(0, dp(28), 0, 0)
     }
+
+    root.addView(greeting)
+    root.addView(clock)
+    root.addView(date)
+    root.addView(labelView)
+
+    // Optional challenge gate.
+    if (dismissRequiresChallenge) {
+      val todayShape = ShapeLibrary.forToday()
+      val challengeWrap = FrameLayout(this).apply {
+        background = GradientDrawable().apply {
+          shape = GradientDrawable.RECTANGLE
+          cornerRadius = dp(20).toFloat()
+          setColor(Color.parseColor("#33FFFFFF"))
+          setStroke(dp(1), Color.parseColor("#66FFFFFF"))
+        }
+        val lp = LinearLayout.LayoutParams(
+          LinearLayout.LayoutParams.MATCH_PARENT,
+          dp(260),
+        )
+        lp.topMargin = dp(28)
+        layoutParams = lp
+        setPadding(dp(8), dp(8), dp(8), dp(8))
+      }
+      val hint = TextView(this).apply {
+        text = "Trace the shape to dismiss"
+        textSize = 13f
+        setTextColor(Color.parseColor("#E6FFFFFF"))
+        gravity = Gravity.CENTER
+        letterSpacing = 0.06f
+        layoutParams = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+          Gravity.TOP or Gravity.CENTER_HORIZONTAL,
+        ).apply { topMargin = dp(10) }
+        setShadowLayer(4f, 0f, 1f, Color.parseColor("#80000000"))
+      }
+      val challenge = ShapeChallengeView(this, todayShape).apply {
+        layoutParams = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          ViewGroup.LayoutParams.MATCH_PARENT,
+        ).apply {
+          topMargin = dp(30)
+        }
+        setOnChallengeResultListener { passed -> if (passed) onChallengePassed() }
+      }
+      challengeWrap.addView(challenge)
+      challengeWrap.addView(hint)
+      root.addView(challengeWrap)
+    }
+
+    // Pill buttons.
     val buttonRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER
-      setPadding(0, dp(24), 0, 0)
+      val lp = LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams.MATCH_PARENT,
+        LinearLayout.LayoutParams.WRAP_CONTENT,
+      ).apply {
+        topMargin = dp(36)
+      }
+      layoutParams = lp
     }
-    val snoozeBtn = Button(this).apply {
-      text = "SNOOZE"
-      setTextColor(Color.WHITE)
-      setBackgroundColor(Color.parseColor("#403A3F58"))
-      setPadding(dp(32), dp(20), dp(32), dp(20))
-      setOnClickListener { onSnooze() }
-    }
-    val dismissBtn = Button(this).apply {
-      text = "DISMISS"
-      setTextColor(Color.parseColor("#0B0B14"))
-      setBackgroundColor(Color.parseColor("#D8C9A8"))
-      setPadding(dp(32), dp(20), dp(32), dp(20))
-      setOnClickListener { onDismiss() }
-    }
+    val snoozeBtn = PillButton(this, "SNOOZE", primary = false) { onSnooze() }
+    val dismissBtn = PillButton(this, "DISMISS", primary = true) { onDismiss() }
+    dismissButton = dismissBtn
+    snoozeButton = snoozeBtn
+    if (dismissRequiresChallenge) dismissBtn.setLocked(true)
+    if (snoozeRequiresChallenge) snoozeBtn.setLocked(true)
+
     buttonRow.addView(snoozeBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
       marginEnd = dp(8)
     })
     buttonRow.addView(dismissBtn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
       marginStart = dp(8)
     })
-    root.addView(clock)
-    root.addView(labelView)
     root.addView(buttonRow)
     scheduleClockTick()
     outer.addView(root)
     return outer
+  }
+
+  private fun greetingForNow(): String {
+    val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    return when {
+      hour in 5..11 -> "GOOD MORNING"
+      hour in 12..16 -> "GOOD AFTERNOON"
+      hour in 17..21 -> "GOOD EVENING"
+      else -> "GOOD NIGHT"
+    }
+  }
+
+  private fun onChallengePassed() {
+    challengeUnlocked = true
+    dismissButton?.setLocked(false)
+    snoozeButton?.setLocked(false)
+  }
+
+  override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+    // Swallow volume keys so they can't be used to silence/snooze the alarm
+    // when the challenge is active. (Stock Android often maps volume = snooze.)
+    return when (keyCode) {
+      android.view.KeyEvent.KEYCODE_VOLUME_UP,
+      android.view.KeyEvent.KEYCODE_VOLUME_DOWN,
+      android.view.KeyEvent.KEYCODE_VOLUME_MUTE -> {
+        if (dismissRequiresChallenge || snoozeRequiresChallenge) true
+        else super.onKeyDown(keyCode, event)
+      }
+      else -> super.onKeyDown(keyCode, event)
+    }
   }
 
   // ---- Slideshow ---------------------------------------------------------
@@ -226,7 +339,6 @@ class RingingActivity : Activity() {
     incoming.setImageBitmap(bmp)
     incoming.alpha = if (immediate) 1f else 0f
 
-    // Ken Burns: alternate horizontal pan direction per slide, with a slight zoom.
     val direction = if (slideshowIndex % 2 == 0) 1f else -1f
     val pan = dp(36).toFloat()
     incoming.translationX = -pan * direction
@@ -242,10 +354,7 @@ class RingingActivity : Activity() {
       .start()
 
     if (!immediate) {
-      outgoing.animate()
-        .alpha(0f)
-        .setDuration(crossfadeMs)
-        .start()
+      outgoing.animate().alpha(0f).setDuration(crossfadeMs).start()
     }
     slideshowCurrent = 1 - slideshowCurrent
     slideshowIndex++
@@ -266,12 +375,15 @@ class RingingActivity : Activity() {
     }, 1000L)
   }
 
-  private fun currentClock(): String =
-    SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+  private fun currentClock(): String {
+    val fmt = if (DateFormat.is24HourFormat(this)) "HH:mm" else "h:mm"
+    return SimpleDateFormat(fmt, Locale.getDefault()).format(Date())
+  }
 
   private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
   private fun onSnooze() {
+    if (snoozeRequiresChallenge && !challengeUnlocked) return
     startService(
       Intent(this, RingingService::class.java).setAction(RingingService.ACTION_SNOOZE),
     )
@@ -279,6 +391,7 @@ class RingingActivity : Activity() {
   }
 
   private fun onDismiss() {
+    if (dismissRequiresChallenge && !challengeUnlocked) return
     startService(
       Intent(this, RingingService::class.java).setAction(RingingService.ACTION_DISMISS),
     )

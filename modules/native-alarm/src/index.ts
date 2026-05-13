@@ -21,6 +21,7 @@ type NativeAlarm = {
   hasFullScreenIntentPermission(): Promise<boolean>;
   openFullScreenIntentSettings(): Promise<void>;
   hasNotificationPermission(): Promise<boolean>;
+  getSystemRingtones(): Promise<{ id: string; name: string; uri: string; category: string }[]>;
   addListener(event: 'onAlarmFired', handler: (e: AlarmFiredEvent) => void): EventSubscription;
   addListener(event: 'onAlarmDismissed', handler: (e: AlarmDismissedEvent) => void): EventSubscription;
   addListener(event: 'onAlarmSnoozed', handler: (e: AlarmSnoozedEvent) => void): EventSubscription;

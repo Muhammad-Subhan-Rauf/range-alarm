@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import * as dbApi from '@/services/db';
 import * as scheduler from '@/services/scheduler';
-import { seedBundledRingtones, pickAndImportRingtone, deleteUserRingtone } from '@/services/ringtoneService';
+import { seedBundledRingtones, pickAndImportRingtone, deleteUserRingtone, fetchSystemRingtones } from '@/services/ringtoneService';
 import type { AlarmGroup, AlarmInstance, Ringtone } from '@/types';
 
 type State = {
@@ -48,11 +48,13 @@ export const useAlarmStore = create<State & Actions>((set, get) => ({
 
   hydrate: async () => {
     await seedBundledRingtones();
-    const [groups, ringtones, allInstances] = await Promise.all([
+    const [groups, dbRingtones, allInstances, systemRingtones] = await Promise.all([
       dbApi.listGroups(),
       dbApi.listRingtones(),
       dbApi.listAllInstances(),
+      fetchSystemRingtones(),
     ]);
+    const ringtones = mergeRingtones(dbRingtones, systemRingtones);
     const instancesByGroup: Record<string, AlarmInstance[]> = {};
     for (const inst of allInstances) {
       (instancesByGroup[inst.groupId] ||= []).push(inst);
@@ -80,8 +82,11 @@ export const useAlarmStore = create<State & Actions>((set, get) => ({
   },
 
   refreshRingtones: async () => {
-    const ringtones = await dbApi.listRingtones();
-    set({ ringtones });
+    const [dbRingtones, systemRingtones] = await Promise.all([
+      dbApi.listRingtones(),
+      fetchSystemRingtones(),
+    ]);
+    set({ ringtones: mergeRingtones(dbRingtones, systemRingtones) });
   },
 
   saveGroup: async (g) => {
@@ -175,4 +180,31 @@ function replaceById<T>(list: T[], item: T, eq: (a: T, b: T) => boolean): T[] {
   const copy = list.slice();
   copy[idx] = item;
   return copy;
+}
+
+/**
+ * Returns: [bundled defaults] [system ringtones grouped by category] [user uploads].
+ * Dedupes by id and uri.
+ */
+function mergeRingtones(dbList: Ringtone[], systemList: Ringtone[]): Ringtone[] {
+  const seenUri = new Set<string>();
+  const out: Ringtone[] = [];
+  // Local default first (the empty-URI fallback "System default alarm").
+  const localDefault = dbList.find(r => r.id === 'system-default');
+  if (localDefault) {
+    out.push(localDefault);
+    if (localDefault.uri) seenUri.add(localDefault.uri);
+  }
+  for (const r of systemList) {
+    if (r.uri && seenUri.has(r.uri)) continue;
+    seenUri.add(r.uri);
+    out.push(r);
+  }
+  for (const r of dbList) {
+    if (r.id === 'system-default') continue;
+    if (r.uri && seenUri.has(r.uri)) continue;
+    if (r.uri) seenUri.add(r.uri);
+    out.push(r);
+  }
+  return out;
 }

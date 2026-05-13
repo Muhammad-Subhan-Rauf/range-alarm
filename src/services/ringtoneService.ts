@@ -1,5 +1,6 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import { nativeAlarm } from 'native-alarm';
 import type { Ringtone } from '@/types';
 import * as dbApi from './db';
 
@@ -20,6 +21,27 @@ export async function seedBundledRingtones(): Promise<void> {
   const existing = await dbApi.listRingtones();
   if (existing.find(r => r.id === 'system-default')) return;
   for (const r of BUNDLED) await dbApi.upsertRingtone(r);
+}
+
+/**
+ * Query the OS for every alarm/notification/ringtone sound it knows about.
+ * These are virtual (never persisted) — they're merged with the DB-backed
+ * ringtones in the store on hydrate.
+ */
+export async function fetchSystemRingtones(): Promise<Ringtone[]> {
+  try {
+    const list = await nativeAlarm.getSystemRingtones();
+    return list.map(r => ({
+      id: r.id,
+      name: r.name,
+      uri: r.uri,
+      bundled: true,
+      durationMs: null,
+    }));
+  } catch (err) {
+    console.warn('[ringtones] getSystemRingtones failed', err);
+    return [];
+  }
 }
 
 export async function pickAndImportRingtone(): Promise<Ringtone | null> {

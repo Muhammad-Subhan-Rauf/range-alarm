@@ -35,6 +35,10 @@ export interface AlarmGroup {
   backgroundTopics: string[];
   /** Local file:// URIs for user-uploaded background images. */
   backgroundCustomImages: string[];
+  /** Gate the Dismiss button behind a trace-the-shape mini-game. */
+  dismissChallenge: DismissChallenge;
+  /** When true (and challenge is enabled), Snooze also requires completing the challenge. */
+  challengeBlocksSnooze: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -79,6 +83,8 @@ export interface AppSettings {
   clockFormat: '24h' | '12h';
   permissionsAcknowledged: boolean;
 }
+
+export type DismissChallenge = 'none' | 'shape';
 
 export const isSingleAlarmGroup = (g: AlarmGroup): boolean =>
   g.stepMinutes === 0 ||
