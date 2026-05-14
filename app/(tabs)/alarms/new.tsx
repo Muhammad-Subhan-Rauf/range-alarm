@@ -3,10 +3,14 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, Music2 } from 'lucide-react-native';
+import { Check, ChevronLeft, Image as ImageIcon, Music2 } from 'lucide-react-native';
+import { ActivityIndicator, Modal } from 'react-native';
+import Animated, { FadeIn, FadeOut, SlideInDown } from 'react-native-reanimated';
 import { WheelTimePicker } from '@/components/WheelTimePicker';
 import { WeekdaySelector } from '@/components/WeekdaySelector';
 import { RingtonePicker } from '@/components/RingtonePicker';
+import { BACKGROUND_TOPICS } from '@/constants/backgrounds';
+import { fetchTopics } from '@/services/backgroundService';
 import { useAlarmStore } from '@/stores/useAlarmStore';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useColors, type Palette } from '@/constants/colors';
@@ -38,6 +42,11 @@ export default function NewAlarmScreen() {
   const [snoozeMax, setSnoozeMax] = useState<number>(settings.defaultSnoozeMaxRepeats);
   const [vibrate, setVibrate] = useState<boolean>(settings.defaultVibrate);
   const [ringtoneOpen, setRingtoneOpen] = useState(false);
+  const [dismissChallenge, setDismissChallenge] = useState<'none' | 'shape'>('none');
+  const [challengeBlocksSnooze, setChallengeBlocksSnooze] = useState(false);
+  const [backgroundTopics, setBackgroundTopics] = useState<string[]>([]);
+  const [bgPickerOpen, setBgPickerOpen] = useState(false);
+  const [pendingTopic, setPendingTopic] = useState<string | null>(null);
 
   const previewGroup: AlarmGroup = useMemo(() => ({
     id: 'preview',
@@ -51,14 +60,14 @@ export default function NewAlarmScreen() {
     snoozeMaxRepeats: snoozeMax,
     vibrate,
     enabled: true,
-    backgroundTopics: [],
+    backgroundTopics,
     backgroundCustomImages: [],
-    dismissChallenge: 'none',
-    challengeBlocksSnooze: false,
+    dismissChallenge,
+    challengeBlocksSnooze: dismissChallenge === 'shape' ? challengeBlocksSnooze : false,
     pausedUntilMs: null,
     createdAt: 0,
     updatedAt: 0,
-  }), [label, startH, startM, endH, endM, isRange, step, repeatDays, ringtoneId, snoozeMin, snoozeMax, vibrate]);
+  }), [label, startH, startM, endH, endM, isRange, step, repeatDays, ringtoneId, snoozeMin, snoozeMax, vibrate, backgroundTopics, dismissChallenge, challengeBlocksSnooze]);
 
   const count = useMemo(() => expandGroup(previewGroup).length, [previewGroup]);
 
@@ -185,6 +194,57 @@ export default function NewAlarmScreen() {
           </View>
         </View>
 
+        <Pressable style={styles.card} onPress={() => setBgPickerOpen(true)}>
+          <Text style={styles.fieldLabel}>Background</Text>
+          <View style={styles.ringRow}>
+            <ImageIcon size={18} color={colors.accent} />
+            <Text style={styles.ringName}>
+              {backgroundTopics.length === 0
+                ? 'None — dark default'
+                : `${backgroundTopics.length} categor${backgroundTopics.length === 1 ? 'y' : 'ies'} selected`}
+            </Text>
+          </View>
+        </Pressable>
+
+        <View style={styles.card}>
+          <Text style={styles.fieldLabel}>Dismiss challenge</Text>
+          <View style={styles.challengeRow}>
+            <Pressable
+              onPress={() => setDismissChallenge('none')}
+              style={[styles.challengeBtn, dismissChallenge === 'none' && styles.challengeBtnActive]}
+            >
+              <Text style={[styles.challengeTxt, dismissChallenge === 'none' && styles.challengeTxtActive]}>None</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setDismissChallenge('shape')}
+              style={[styles.challengeBtn, dismissChallenge === 'shape' && styles.challengeBtnActive]}
+            >
+              <Text style={[styles.challengeTxt, dismissChallenge === 'shape' && styles.challengeTxtActive]}>Trace shape</Text>
+            </Pressable>
+          </View>
+          {dismissChallenge === 'shape' && (
+            <>
+              <Text style={styles.challengeHint}>
+                Trace today&apos;s shape to unlock the alarm. Shape rotates daily.
+              </Text>
+              <View style={[styles.rowBetween, { marginTop: 14 }]}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text style={styles.ringName}>Also block Snooze</Text>
+                  <Text style={styles.challengeHint}>
+                    Snooze requires the same trace. Hides notification actions so it can&apos;t be bypassed.
+                  </Text>
+                </View>
+                <Switch
+                  value={challengeBlocksSnooze}
+                  onValueChange={setChallengeBlocksSnooze}
+                  trackColor={{ false: colors.shimmer, true: colors.accentDim }}
+                  thumbColor={challengeBlocksSnooze ? colors.accent : '#888'}
+                />
+              </View>
+            </>
+          )}
+        </View>
+
         <Pressable style={styles.card} onPress={() => setRingtoneOpen(true)}>
           <Text style={styles.fieldLabel}>Ringtone</Text>
           <View style={styles.ringRow}>
@@ -234,9 +294,80 @@ export default function NewAlarmScreen() {
         onClose={() => setRingtoneOpen(false)}
         onAdd={onAddRingtone}
       />
+
+      <Modal visible={bgPickerOpen} transparent animationType="none" onRequestClose={() => setBgPickerOpen(false)}>
+        <Animated.View entering={FadeIn.duration(140)} exiting={FadeOut.duration(120)} style={bgPickerStyles(colors).backdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setBgPickerOpen(false)} />
+          <Animated.View entering={SlideInDown.duration(220)} style={bgPickerStyles(colors).sheet}>
+            <View style={bgPickerStyles(colors).handle} />
+            <Text style={bgPickerStyles(colors).title}>Background categories</Text>
+            <Text style={bgPickerStyles(colors).subtitle}>Selecting downloads 10 images so the alarm has visuals offline. You can add custom images after saving.</Text>
+            <ScrollView style={{ maxHeight: 420 }}>
+              {BACKGROUND_TOPICS.map(t => {
+                const active = backgroundTopics.includes(t.id);
+                const loading = pendingTopic === t.id;
+                return (
+                  <Pressable
+                    key={t.id}
+                    onPress={async () => {
+                      if (loading) return;
+                      if (active) {
+                        setBackgroundTopics(prev => prev.filter(x => x !== t.id));
+                        return;
+                      }
+                      setPendingTopic(t.id);
+                      try {
+                        await fetchTopics([t.id]);
+                        setBackgroundTopics(prev => [...prev, t.id]);
+                      } finally {
+                        setPendingTopic(null);
+                      }
+                    }}
+                    style={[bgPickerStyles(colors).topic, active && bgPickerStyles(colors).topicActive]}
+                  >
+                    <Text style={bgPickerStyles(colors).topicEmoji}>{t.emoji}</Text>
+                    <Text style={[bgPickerStyles(colors).topicLabel, active && bgPickerStyles(colors).topicLabelActive]}>{t.label}</Text>
+                    {loading ? <ActivityIndicator size="small" color={colors.accent} /> : active ? <Check size={18} color={colors.accent} /> : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
     </SafeAreaView>
   );
 }
+
+const bgPickerStyles = (colors: Palette) => StyleSheet.create({
+  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.55)' },
+  sheet: {
+    backgroundColor: colors.bgElevated,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 32,
+    maxHeight: '80%',
+  },
+  handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: 12 },
+  title: { color: colors.text, fontSize: 18, fontWeight: '600' },
+  subtitle: { color: colors.textDim, fontSize: 12, marginTop: 4, marginBottom: 12 },
+  topic: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    marginBottom: 8,
+    backgroundColor: colors.card,
+  },
+  topicActive: { borderWidth: 1, borderColor: colors.accent, backgroundColor: colors.cardHover },
+  topicEmoji: { fontSize: 22 },
+  topicLabel: { color: colors.text, flex: 1, fontWeight: '600' },
+  topicLabelActive: { color: colors.accent },
+});
 
 function AmPmToggle({ isPm, label, onChange }: { isPm: boolean; label?: string; onChange: (pm: boolean) => void }) {
   const colors = useColors();
@@ -363,6 +494,12 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   stepBtnText: { color: colors.text, fontSize: 18, fontWeight: '700' },
   stepperVal: { color: colors.text, fontWeight: '600', minWidth: 56, textAlign: 'center' },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  challengeRow: { flexDirection: 'row', backgroundColor: colors.bgElevated, borderRadius: 12, padding: 3 },
+  challengeBtn: { flex: 1, paddingVertical: 10, borderRadius: 9, alignItems: 'center' },
+  challengeBtnActive: { backgroundColor: colors.accent },
+  challengeTxt: { color: colors.textMuted, fontWeight: '600', fontSize: 13 },
+  challengeTxtActive: { color: colors.accentOn },
+  challengeHint: { color: colors.textDim, fontSize: 12, marginTop: 10 },
   summary: { marginHorizontal: 16, marginTop: 10, alignItems: 'center' },
   summaryHint: { color: colors.textDim, fontSize: 11, letterSpacing: 1 },
   summaryTime: { color: colors.text, fontSize: 28, fontWeight: '700', marginTop: 4 },

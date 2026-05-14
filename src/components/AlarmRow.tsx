@@ -22,10 +22,11 @@ type Props = {
   onPress: () => void;
   onLongPress: () => void;
   onToggle: (enabled: boolean) => void;
+  onPauseToggle: () => void;
 };
 
 export const AlarmRow = React.memo(function AlarmRow({
-  group, instances, ringtone, selectionMode, selected, onPress, onLongPress, onToggle,
+  group, instances, ringtone, selectionMode, selected, onPress, onLongPress, onToggle, onPauseToggle,
 }: Props) {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -33,6 +34,7 @@ export const AlarmRow = React.memo(function AlarmRow({
   const enabled = group.enabled;
   const childCount = instances.length;
   const single = isSingleAlarmGroup(group);
+  const isPaused = !!group.pausedUntilMs && group.pausedUntilMs > Date.now();
 
   const animated = useAnimatedStyle(() => ({
     transform: [{ scale: withSpring(selected ? 0.98 : 1, springs.snappy) }],
@@ -70,7 +72,7 @@ export const AlarmRow = React.memo(function AlarmRow({
             <Music2 size={12} color={colors.textDim} />
             <Text style={styles.meta} numberOfLines={1}>{ringtone?.name ?? 'Default'}</Text>
           </View>
-          {enabled && group.pausedUntilMs && group.pausedUntilMs > Date.now() ? (
+          {enabled && isPaused ? (
             <View style={styles.pauseBadge}>
               <Moon size={12} color={colors.warn} />
               <Text style={styles.pauseBadgeText}>Paused until tomorrow</Text>
@@ -79,12 +81,17 @@ export const AlarmRow = React.memo(function AlarmRow({
         </View>
 
         {!selectionMode && (
-          <Switch
-            value={enabled}
-            onValueChange={onToggle}
-            trackColor={{ false: colors.shimmer, true: colors.accentDim }}
-            thumbColor={enabled ? colors.accent : '#888'}
-          />
+          <View style={styles.rightCol}>
+            <Pressable onPress={onPauseToggle} hitSlop={8} style={[styles.pauseBtn, isPaused && styles.pauseBtnActive]}>
+              <Moon size={18} color={isPaused ? colors.bg : colors.textDim} />
+            </Pressable>
+            <Switch
+              value={enabled}
+              onValueChange={onToggle}
+              trackColor={{ false: colors.shimmer, true: colors.accentDim }}
+              thumbColor={enabled ? colors.accent : '#888'}
+            />
+          </View>
         )}
       </Animated.View>
     </Pressable>
@@ -122,4 +129,14 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     backgroundColor: 'rgba(232,166,111,0.12)',
   },
   pauseBadgeText: { color: colors.warn, fontSize: 11, fontWeight: '600' },
+  rightCol: { alignItems: 'center', gap: 10 },
+  pauseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgElevated,
+  },
+  pauseBtnActive: { backgroundColor: colors.warn },
 });

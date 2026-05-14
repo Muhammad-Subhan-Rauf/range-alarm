@@ -25,6 +25,8 @@ export default function AlarmsListScreen() {
   const removeGroups = useAlarmStore(s => s.removeGroups);
   const batchPatch = useAlarmStore(s => s.batchPatch);
   const pauseGroupsToday = useAlarmStore(s => s.pauseGroupsToday);
+  const pauseGroupToday = useAlarmStore(s => s.pauseGroupToday);
+  const resumeGroup = useAlarmStore(s => s.resumeGroup);
 
   const selectionMode = selectedIds.size > 0;
   const [batchEditOpen, setBatchEditOpen] = useState(false);
@@ -84,6 +86,11 @@ export default function AlarmsListScreen() {
                   toggleGroup(item.id, enabled).catch((err: any) => {
                     Alert.alert('Could not toggle alarm', String(err?.message ?? err));
                   });
+                }}
+                onPauseToggle={() => {
+                  const paused = !!item.pausedUntilMs && item.pausedUntilMs > Date.now();
+                  const action = paused ? resumeGroup(item.id) : pauseGroupToday(item.id);
+                  action.catch((err: any) => Alert.alert(paused ? 'Could not resume' : 'Could not pause', String(err?.message ?? err)));
                 }}
               />
             </SwipeableRow>
