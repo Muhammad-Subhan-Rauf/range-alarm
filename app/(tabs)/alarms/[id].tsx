@@ -254,7 +254,7 @@ export default function EditGroupScreen() {
           {dismissChallenge === 'shape' && (
             <>
               <Text style={styles.challengeHint}>
-                Trace today&apos;s shape to unlock the alarm. Shape rotates daily.
+                Trace a random shape to unlock the alarm. A fresh shape is picked every time it rings.
               </Text>
               <View style={[styles.rowBetween, { marginTop: 14 }]}>
                 <View style={{ flex: 1, paddingRight: 12 }}>

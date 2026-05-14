@@ -210,7 +210,7 @@ class RingingActivity : Activity() {
 
     // Optional challenge gate.
     if (dismissRequiresChallenge) {
-      val todayShape = ShapeLibrary.forToday()
+      val todayShape = ShapeLibrary.random()
       val challengeWrap = FrameLayout(this).apply {
         background = GradientDrawable().apply {
           shape = GradientDrawable.RECTANGLE

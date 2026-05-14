@@ -129,4 +129,7 @@ object ShapeLibrary {
     val day = cal.get(Calendar.YEAR) * 1000 + cal.get(Calendar.DAY_OF_YEAR)
     return SHAPES[day % SHAPES.size]
   }
+
+  /** Pick a fresh random shape — used at each alarm fire. */
+  fun random(): Shape = SHAPES[kotlin.random.Random.nextInt(SHAPES.size)]
 }
