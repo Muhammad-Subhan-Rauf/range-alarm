@@ -39,6 +39,8 @@ export interface AlarmGroup {
   dismissChallenge: DismissChallenge;
   /** When true (and challenge is enabled), Snooze also requires completing the challenge. */
   challengeBlocksSnooze: boolean;
+  /** Epoch ms; while now() < this, every instance is rescheduled past it. null = active. */
+  pausedUntilMs: number | null;
   createdAt: number;
   updatedAt: number;
 }

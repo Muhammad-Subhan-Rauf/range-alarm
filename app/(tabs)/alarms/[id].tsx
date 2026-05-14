@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ChevronLeft, Image as ImageIcon, Music2, Trash2 } from 'lucide-react-native';
+import { ChevronLeft, Image as ImageIcon, Moon, Music2, Trash2 } from 'lucide-react-native';
 import { useAlarmStore } from '@/stores/useAlarmStore';
 import { RingtonePicker } from '@/components/RingtonePicker';
 import { WeekdaySelector } from '@/components/WeekdaySelector';
@@ -26,6 +26,9 @@ export default function EditGroupScreen() {
   const removeGroups = useAlarmStore(s => s.removeGroups);
   const setInstanceSkipped = useAlarmStore(s => s.setInstanceSkipped);
   const importRingtone = useAlarmStore(s => s.importRingtone);
+  const pauseGroupToday = useAlarmStore(s => s.pauseGroupToday);
+  const resumeGroup = useAlarmStore(s => s.resumeGroup);
+  const isPaused = !!group?.pausedUntilMs && group.pausedUntilMs > Date.now();
 
   const [label, setLabel] = useState(group?.label ?? '');
   const [repeatDays, setRepeatDays] = useState(group?.repeatDays ?? 0);
@@ -177,6 +180,28 @@ export default function EditGroupScreen() {
             </View>
           )}
         </View>
+
+        <Pressable
+          style={[styles.card, isPaused && styles.cardPaused]}
+          onPress={() => {
+            const action = isPaused ? resumeGroup(group.id) : pauseGroupToday(group.id);
+            action.catch((err: any) => Alert.alert(isPaused ? 'Could not resume' : 'Could not pause', String(err?.message ?? err)));
+          }}
+        >
+          <View style={styles.pauseRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>{isPaused ? 'Paused' : 'Pause today'}</Text>
+              <Text style={styles.pauseHint}>
+                {isPaused
+                  ? 'Resumes at midnight. Tap to resume now.'
+                  : 'Skip today\'s alarms. Resumes automatically tomorrow.'}
+              </Text>
+            </View>
+            <View style={[styles.pauseIcon, isPaused && styles.pauseIconActive]}>
+              <Moon size={20} color={isPaused ? colors.accentOn : colors.accent} />
+            </View>
+          </View>
+        </Pressable>
 
         <View style={styles.card}>
           <Text style={styles.fieldLabel}>Label</Text>
@@ -425,6 +450,11 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   challengeTxt: { color: colors.textMuted, fontWeight: '600', fontSize: 13 },
   challengeTxtActive: { color: colors.accentOn },
   challengeHint: { color: colors.textDim, fontSize: 12, marginTop: 10 },
+  cardPaused: { borderWidth: 1, borderColor: colors.warn },
+  pauseRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  pauseHint: { color: colors.textDim, fontSize: 12, marginTop: 4 },
+  pauseIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.cardHover },
+  pauseIconActive: { backgroundColor: colors.warn },
   instRow: {
     flexDirection: 'row',
     alignItems: 'center',

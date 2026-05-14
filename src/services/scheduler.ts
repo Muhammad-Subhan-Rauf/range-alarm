@@ -35,14 +35,16 @@ async function buildPayloads(
   if (!group.enabled) return [];
   const ringtoneUri = resolveRingtoneUri(group.ringtoneId, ringtones);
   const pool = await poolForGroup(group);
-  // Each instance gets its own shuffled subset so slideshows don't all start
-  // with the same image when many alarms fire in quick succession.
+  // If the group is paused, shift the scheduling baseline forward so every
+  // instance ends up after the pause expires. (Effectively skips today.)
+  const pauseEnd = group.pausedUntilMs ?? 0;
+  const effectiveNow = pauseEnd > now.toMillis() ? DateTime.fromMillis(pauseEnd) : now;
   return instances
     .filter(i => !i.skipped)
     .map<AlarmPayload>(i => ({
       instanceId: i.id,
       groupId: group.id,
-      triggerAtMs: nextFireMs(i.time, group.repeatDays, now),
+      triggerAtMs: nextFireMs(i.time, group.repeatDays, effectiveNow),
       label: group.label || 'Alarm',
       ringtoneUri,
       backgroundUris: pool.length ? shuffled(pool).slice(0, MAX_BG_URIS) : [],
@@ -98,6 +100,30 @@ export async function setGroupEnabled(
     if (payloads.length) await nativeAlarm.scheduleMany(payloads);
   }
   return updated;
+}
+
+/**
+ * Set the pause-until timestamp on a group and reschedule its native alarms.
+ * Pass null to resume immediately.
+ */
+export async function setGroupPaused(
+  group: AlarmGroup,
+  pausedUntilMs: number | null,
+  ringtones: Ringtone[],
+): Promise<AlarmGroup> {
+  const updated: AlarmGroup = { ...group, pausedUntilMs, updatedAt: Date.now() };
+  await dbApi.upsertGroup(updated);
+  if (!updated.enabled) return updated;
+  const instances = await dbApi.listInstances(group.id);
+  await nativeAlarm.cancelGroup(group.id);
+  const payloads = await buildPayloads(updated, instances, ringtones);
+  if (payloads.length) await nativeAlarm.scheduleMany(payloads);
+  return updated;
+}
+
+/** Returns the epoch ms for the *next* local midnight after `now`. */
+export function nextMidnightMs(now: DateTime = DateTime.local()): number {
+  return now.plus({ days: 1 }).startOf('day').toMillis();
 }
 
 /** Toggle the skipped flag on a single child instance. */

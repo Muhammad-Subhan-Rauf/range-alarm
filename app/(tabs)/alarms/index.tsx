@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { FadeIn } from 'react-native-reanimated';
@@ -24,6 +24,7 @@ export default function AlarmsListScreen() {
   const toggleGroup = useAlarmStore(s => s.toggleGroup);
   const removeGroups = useAlarmStore(s => s.removeGroups);
   const batchPatch = useAlarmStore(s => s.batchPatch);
+  const pauseGroupsToday = useAlarmStore(s => s.pauseGroupsToday);
 
   const selectionMode = selectedIds.size > 0;
   const [batchEditOpen, setBatchEditOpen] = useState(false);
@@ -79,7 +80,11 @@ export default function AlarmsListScreen() {
                 selected={selectedIds.has(item.id)}
                 onPress={() => handleRowPress(item.id)}
                 onLongPress={() => toggleSelection(item.id)}
-                onToggle={(enabled) => toggleGroup(item.id, enabled)}
+                onToggle={(enabled) => {
+                  toggleGroup(item.id, enabled).catch((err: any) => {
+                    Alert.alert('Could not toggle alarm', String(err?.message ?? err));
+                  });
+                }}
               />
             </SwipeableRow>
           )}
@@ -92,6 +97,9 @@ export default function AlarmsListScreen() {
         onCancel={clearSelection}
         onDelete={handleBatchDelete}
         onToggle={handleBatchToggle}
+        onPauseToday={() => {
+          pauseGroupsToday(Array.from(selectedIds)).then(() => clearSelection());
+        }}
         onEdit={() => setBatchEditOpen(true)}
       />
 

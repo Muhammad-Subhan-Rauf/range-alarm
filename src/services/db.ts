@@ -41,6 +41,7 @@ async function migrate(d: SQLite.SQLiteDatabase): Promise<void> {
       backgroundCustomImages TEXT NOT NULL DEFAULT '[]',
       dismissChallenge TEXT NOT NULL DEFAULT 'none',
       challengeBlocksSnooze INTEGER NOT NULL DEFAULT 0,
+      pausedUntilMs INTEGER,
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL
     );
@@ -85,6 +86,7 @@ async function migrate(d: SQLite.SQLiteDatabase): Promise<void> {
     `backgroundCustomImages TEXT NOT NULL DEFAULT '[]'`,
     `dismissChallenge TEXT NOT NULL DEFAULT 'none'`,
     `challengeBlocksSnooze INTEGER NOT NULL DEFAULT 0`,
+    `pausedUntilMs INTEGER`,
   ]) {
     try { await d.execAsync(`ALTER TABLE alarm_groups ADD COLUMN ${col}`); } catch { /* already present */ }
   }
@@ -108,6 +110,7 @@ const toGroup = (r: any): AlarmGroup => ({
   backgroundCustomImages: parseTopics(r.backgroundCustomImages),
   dismissChallenge: r.dismissChallenge === 'shape' ? 'shape' : 'none',
   challengeBlocksSnooze: !!r.challengeBlocksSnooze,
+  pausedUntilMs: r.pausedUntilMs ?? null,
   createdAt: r.createdAt,
   updatedAt: r.updatedAt,
 });
@@ -151,8 +154,8 @@ export async function getGroup(id: string): Promise<AlarmGroup | null> {
 export async function upsertGroup(g: AlarmGroup): Promise<void> {
   const d = await db();
   await d.runAsync(
-    `INSERT INTO alarm_groups (id,label,startHour,startMinute,endHour,endMinute,stepMinutes,repeatDays,ringtoneId,snoozeMs,snoozeMaxRepeats,vibrate,enabled,backgroundTopics,backgroundCustomImages,dismissChallenge,challengeBlocksSnooze,createdAt,updatedAt)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO alarm_groups (id,label,startHour,startMinute,endHour,endMinute,stepMinutes,repeatDays,ringtoneId,snoozeMs,snoozeMaxRepeats,vibrate,enabled,backgroundTopics,backgroundCustomImages,dismissChallenge,challengeBlocksSnooze,pausedUntilMs,createdAt,updatedAt)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET
        label=excluded.label,
        startHour=excluded.startHour,
@@ -170,6 +173,7 @@ export async function upsertGroup(g: AlarmGroup): Promise<void> {
        backgroundCustomImages=excluded.backgroundCustomImages,
        dismissChallenge=excluded.dismissChallenge,
        challengeBlocksSnooze=excluded.challengeBlocksSnooze,
+       pausedUntilMs=excluded.pausedUntilMs,
        updatedAt=excluded.updatedAt`,
     [
       g.id, g.label, g.start.hour, g.start.minute, g.end.hour, g.end.minute,
@@ -179,6 +183,7 @@ export async function upsertGroup(g: AlarmGroup): Promise<void> {
       JSON.stringify(g.backgroundCustomImages ?? []),
       g.dismissChallenge ?? 'none',
       g.challengeBlocksSnooze ? 1 : 0,
+      g.pausedUntilMs ?? null,
       g.createdAt, g.updatedAt,
     ],
   );

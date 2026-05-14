@@ -5,7 +5,7 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from 'react-native-reanimated';
-import { CheckCircle2, Circle, Music2, Repeat } from 'lucide-react-native';
+import { CheckCircle2, Circle, Moon, Music2, Repeat } from 'lucide-react-native';
 import { useColors, type Palette } from '@/constants/colors';
 import { springs } from '@/constants/animations';
 import { describeRepeat, formatTime, formatTimeOfDayRange } from '@/services/timeUtils';
@@ -70,6 +70,12 @@ export const AlarmRow = React.memo(function AlarmRow({
             <Music2 size={12} color={colors.textDim} />
             <Text style={styles.meta} numberOfLines={1}>{ringtone?.name ?? 'Default'}</Text>
           </View>
+          {enabled && group.pausedUntilMs && group.pausedUntilMs > Date.now() ? (
+            <View style={styles.pauseBadge}>
+              <Moon size={12} color={colors.warn} />
+              <Text style={styles.pauseBadgeText}>Paused until tomorrow</Text>
+            </View>
+          ) : null}
         </View>
 
         {!selectionMode && (
@@ -104,4 +110,16 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6 },
   meta: { color: colors.textDim, fontSize: 12 },
   dot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: colors.textDim, marginHorizontal: 4 },
+  pauseBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: 'rgba(232,166,111,0.12)',
+  },
+  pauseBadgeText: { color: colors.warn, fontSize: 11, fontWeight: '600' },
 });

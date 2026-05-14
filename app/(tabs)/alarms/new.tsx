@@ -55,6 +55,7 @@ export default function NewAlarmScreen() {
     backgroundCustomImages: [],
     dismissChallenge: 'none',
     challengeBlocksSnooze: false,
+    pausedUntilMs: null,
     createdAt: 0,
     updatedAt: 0,
   }), [label, startH, startM, endH, endM, isRange, step, repeatDays, ringtoneId, snoozeMin, snoozeMax, vibrate]);

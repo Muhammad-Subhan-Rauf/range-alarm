@@ -22,6 +22,10 @@ type Actions = {
   toggleGroup: (groupId: string, enabled: boolean) => Promise<void>;
   removeGroups: (ids: string[]) => Promise<void>;
 
+  pauseGroupToday: (groupId: string) => Promise<void>;
+  resumeGroup: (groupId: string) => Promise<void>;
+  pauseGroupsToday: (ids: string[]) => Promise<void>;
+
   setInstanceSkipped: (groupId: string, instanceId: string, skipped: boolean) => Promise<void>;
 
   // Batch ops
@@ -48,12 +52,24 @@ export const useAlarmStore = create<State & Actions>((set, get) => ({
 
   hydrate: async () => {
     await seedBundledRingtones();
-    const [groups, dbRingtones, allInstances, systemRingtones] = await Promise.all([
+    const [groupsRaw, dbRingtones, allInstances, systemRingtones] = await Promise.all([
       dbApi.listGroups(),
       dbApi.listRingtones(),
       dbApi.listAllInstances(),
       fetchSystemRingtones(),
     ]);
+    // Auto-clear expired pauses so the user doesn't see stale "Paused" badges.
+    const nowMs = Date.now();
+    const groups: AlarmGroup[] = [];
+    for (const g of groupsRaw) {
+      if (g.pausedUntilMs != null && g.pausedUntilMs <= nowMs) {
+        const cleared = { ...g, pausedUntilMs: null };
+        groups.push(cleared);
+        try { await dbApi.upsertGroup(cleared); } catch { /* non-fatal */ }
+      } else {
+        groups.push(g);
+      }
+    }
     const ringtones = mergeRingtones(dbRingtones, systemRingtones);
     const instancesByGroup: Record<string, AlarmInstance[]> = {};
     for (const inst of allInstances) {
@@ -101,8 +117,18 @@ export const useAlarmStore = create<State & Actions>((set, get) => ({
   toggleGroup: async (groupId, enabled) => {
     const group = get().groups.find(x => x.id === groupId);
     if (!group) return;
-    const updated = await scheduler.setGroupEnabled(group, enabled, get().ringtones);
-    set(s => ({ groups: replaceById(s.groups, updated, (a, b) => a.id === b.id) }));
+    // Optimistic: flip the switch immediately so the UI feels responsive.
+    // If the scheduler call fails downstream, revert and surface the error.
+    const optimistic: AlarmGroup = { ...group, enabled, updatedAt: Date.now() };
+    set(s => ({ groups: replaceById(s.groups, optimistic, (a, b) => a.id === b.id) }));
+    try {
+      const updated = await scheduler.setGroupEnabled(group, enabled, get().ringtones);
+      set(s => ({ groups: replaceById(s.groups, updated, (a, b) => a.id === b.id) }));
+    } catch (err: any) {
+      console.error('[alarm-store] toggleGroup failed', err?.message ?? err);
+      set(s => ({ groups: replaceById(s.groups, group, (a, b) => a.id === b.id) }));
+      throw err;
+    }
   },
 
   removeGroups: async (ids) => {
@@ -116,17 +142,72 @@ export const useAlarmStore = create<State & Actions>((set, get) => ({
     }));
   },
 
+  pauseGroupToday: async (groupId) => {
+    const group = get().groups.find(g => g.id === groupId);
+    if (!group) return;
+    const pausedUntilMs = scheduler.nextMidnightMs();
+    const optimistic: AlarmGroup = { ...group, pausedUntilMs, updatedAt: Date.now() };
+    set(s => ({ groups: replaceById(s.groups, optimistic, (a, b) => a.id === b.id) }));
+    try {
+      const updated = await scheduler.setGroupPaused(group, pausedUntilMs, get().ringtones);
+      set(s => ({ groups: replaceById(s.groups, updated, (a, b) => a.id === b.id) }));
+    } catch (err: any) {
+      console.error('[alarm-store] pauseGroupToday failed', err?.message ?? err);
+      set(s => ({ groups: replaceById(s.groups, group, (a, b) => a.id === b.id) }));
+      throw err;
+    }
+  },
+
+  resumeGroup: async (groupId) => {
+    const group = get().groups.find(g => g.id === groupId);
+    if (!group) return;
+    const optimistic: AlarmGroup = { ...group, pausedUntilMs: null, updatedAt: Date.now() };
+    set(s => ({ groups: replaceById(s.groups, optimistic, (a, b) => a.id === b.id) }));
+    try {
+      const updated = await scheduler.setGroupPaused(group, null, get().ringtones);
+      set(s => ({ groups: replaceById(s.groups, updated, (a, b) => a.id === b.id) }));
+    } catch (err: any) {
+      console.error('[alarm-store] resumeGroup failed', err?.message ?? err);
+      set(s => ({ groups: replaceById(s.groups, group, (a, b) => a.id === b.id) }));
+      throw err;
+    }
+  },
+
+  pauseGroupsToday: async (ids) => {
+    for (const id of ids) {
+      try { await get().pauseGroupToday(id); } catch { /* surfaced individually */ }
+    }
+  },
+
   setInstanceSkipped: async (groupId, instanceId, skipped) => {
     const group = get().groups.find(x => x.id === groupId);
     const instance = get().instancesByGroup[groupId]?.find(x => x.id === instanceId);
     if (!group || !instance) return;
-    const updated = await scheduler.setInstanceSkipped(group, instance, skipped, get().ringtones);
+    const optimistic: AlarmInstance = { ...instance, skipped };
     set(s => ({
       instancesByGroup: {
         ...s.instancesByGroup,
-        [groupId]: (s.instancesByGroup[groupId] ?? []).map(i => i.id === instanceId ? updated : i),
+        [groupId]: (s.instancesByGroup[groupId] ?? []).map(i => i.id === instanceId ? optimistic : i),
       },
     }));
+    try {
+      const updated = await scheduler.setInstanceSkipped(group, instance, skipped, get().ringtones);
+      set(s => ({
+        instancesByGroup: {
+          ...s.instancesByGroup,
+          [groupId]: (s.instancesByGroup[groupId] ?? []).map(i => i.id === instanceId ? updated : i),
+        },
+      }));
+    } catch (err: any) {
+      console.error('[alarm-store] setInstanceSkipped failed', err?.message ?? err);
+      set(s => ({
+        instancesByGroup: {
+          ...s.instancesByGroup,
+          [groupId]: (s.instancesByGroup[groupId] ?? []).map(i => i.id === instanceId ? instance : i),
+        },
+      }));
+      throw err;
+    }
   },
 
   batchPatch: async (ids, patch) => {
